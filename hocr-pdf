@@ -152,8 +152,9 @@ if __name__ == "__main__":
                                      description="Create a searchable PDF from an image file and a hocr file.")
     parser.add_argument('image_file', help="An image file (JP2, JPG).")
     parser.add_argument('hocr_file', help="The Hocr file for the provided image.")
-    parser.add_argument('-o', '--output', dest="filename", help="Filename to save PDF as.")
-    parser.add_argument('--density', dest="dpi", default=300, help="Density of source images.")
+    parser.add_argument('-o', '--output', dest="filename",
+                        help="Filename to save PDF as. Defaults to image_file path and name, but with pdf extension.")
+    parser.add_argument('--density', dest="dpi", default=300, help="Density of source images. Defaults to 300.")
     args = parser.parse_args()
     if not os.path.exists(args.image_file):
         parser.error("File {} does not exist".format(args.image_file))
