@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
@@ -20,11 +20,9 @@
 from __future__ import print_function
 import argparse
 import base64
-import glob
 import io
 import os.path
 import re
-import sys
 import zlib
 
 from reportlab.pdfbase import pdfmetrics
@@ -36,47 +34,48 @@ from PIL import Image
 
 
 class StdoutWrapper:
+
+    filename = None
+
+    def __init__(self, filename):
+        self.filename = filename
+
     """
     Wrapper around stdout that ensures 'bytes' data is decoded
     to 'latin1' (0x00 - 0xff) before writing out. This is necessary for
     the invisible font to be injected as bytes but written out as a string.
     """
-
     def write(self, data, *args, **kwargs):
-        if bytes != str and isinstance(data, bytes):
-            data = data.decode('latin1')
-        sys.stdout.write(data)
+        with open(self.filename, "w") as fp:
+            if bytes != str and isinstance(data, bytes):
+                data = data.decode('latin1')
+            fp.write(data)
 
 
-def export_pdf(playground, default_dpi):
-    """Create a searchable PDF from a pile of HOCR + JPEG"""
+def create_pdf(image_file, hocr_file, pdf_filename, default_dpi):
+    """Create a PDF from an image and HOCR"""
     load_invisible_font()
-    pdf = Canvas(StdoutWrapper(), pageCompression=1)
+    pdf = Canvas(StdoutWrapper(pdf_filename), pageCompression=1)
     pdf.setCreator('hocr-tools')
-    pdf.setTitle(os.path.basename(playground))
-    images = sorted(glob.glob(os.path.join(playground, '*.jpg')))
     dpi = default_dpi
-    for image in images:
-        im = Image.open(image)
-        w, h = im.size
-        try:
-            dpi = im.info['dpi'][0]
-        except KeyError:
-            pass
-        width = w * 72 / dpi
-        height = h * 72 / dpi
-        pdf.setPageSize((width, height))
-        pdf.drawImage(image, 0, 0, width=width, height=height)
-        add_text_layer(pdf, image, height, dpi)
-        pdf.showPage()
+    im = Image.open(image_file)
+    w, h = im.size
+    try:
+        dpi = im.info['dpi'][0]
+    except KeyError:
+        pass
+    width = w * 72 / dpi
+    height = h * 72 / dpi
+    pdf.setPageSize((width, height))
+    pdf.drawImage(image_file, 0, 0, width=width, height=height)
+    add_text_layer(pdf, hocr_file, height, dpi)
     pdf.save()
 
 
-def add_text_layer(pdf, image, height, dpi):
+def add_text_layer(pdf, hocrfile, height, dpi):
     """Draw an invisible text layer for OCR data"""
     p1 = re.compile('bbox((\s+\d+){4})')
-    p2 = re.compile('baseline((\s+[\d\.\-]+){2})')
-    hocrfile = os.path.splitext(image)[0] + ".hocr"
+    p2 = re.compile('baseline((\s+[\d.\-]+){2})')
     hocr = etree.parse(hocrfile, html.XHTMLParser())
     for line in hocr.xpath('//*[@class="ocr_line"]'):
         linebox = p1.search(line.attrib['title']).group(1).split()
@@ -87,9 +86,9 @@ def add_text_layer(pdf, image, height, dpi):
         linebox = [float(i) for i in linebox]
         baseline = [float(i) for i in baseline]
         xpath_elements = './/*[@class="ocrx_word"]'
-        if (not (line.xpath('boolean(' + xpath_elements + ')'))):
-            #if there are no words elements present,
-            #we switch to lines as elements
+        if not (line.xpath('boolean(' + xpath_elements + ')')):
+            # if there are no words elements present,
+            # we switch to lines as elements
             xpath_elements = '.'
         for word in line.xpath(xpath_elements):
             rawtext = word.text_content().strip()
@@ -142,19 +141,27 @@ pylRc2Zn+XDQWZIL8iO5KC9S+1RekOex1uOyZGR/w/Hf1lhzqVfFsxE39B/ws7Rm3N3nDrhPuMfc
 w3R/aE28KsfY2J+RPNp+j+KaOoCey4h+Dd48b9O5G0v2K7j0AM6s+5WQ/E0wVoK+pA6/3bup7bJf
 CMGjwvxTsr74/f/F95m3TH9x8o0/TU//N+7/D/ScVcA=
 """.encode('latin1')
-    uncompressed = bytearray(zlib.decompress(base64.decodestring(font)))
+    uncompressed = bytearray(zlib.decompress(base64.decodebytes(font)))
     ttf = io.BytesIO(uncompressed)
     setattr(ttf, "name", "(invisible.ttf)")
     pdfmetrics.registerFont(TTFont('invisible', ttf))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Create a searchable PDF from a pile of hOCR and JPEG")
-    parser.add_argument(
-        "imgdir",
-        help=
-        "directory with the hOCR and JPEG files (corresponding JPEG and hOCR files have to have the same name with their respective file ending)"
-    )
+    parser = argparse.ArgumentParser(usage="searchablePDF <image_file> <hocr_file>",
+                                     description="Create a searchable PDF from an image file and a hocr file.")
+    parser.add_argument('image_file', help="An image file (JP2, JPG).")
+    parser.add_argument('hocr_file', help="The Hocr file for the provided image.")
+    parser.add_argument('-o', '--output', dest="filename", help="Filename to save PDF as.")
+    parser.add_argument('--density', dest="dpi", default=300, help="Density of source images.")
     args = parser.parse_args()
-    export_pdf(args.imgdir, 300)
+    if not os.path.exists(args.image_file):
+        parser.error("File {} does not exist".format(args.image_file))
+    if not os.path.exists(args.hocr_file):
+        parser.error("File {} does not exist".format(args.hocr_file))
+    if args.filename is None:
+        pdf_filename = os.path.splitext(args.image_file)[0] + ".pdf"
+    else:
+        pdf_filename = args.filename
+
+    create_pdf(args.image_file, args.hocr_file, pdf_filename, args.dpi)
